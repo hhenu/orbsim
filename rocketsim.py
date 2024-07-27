@@ -14,9 +14,8 @@ import matplotlib.pyplot as plt
 
 from solvers import rk4
 from typing import Callable
-from projectiles import Rocket
-from projectiledata import ProjectileData
-from drag_correlations import HaiderLevenspiel, HolzerSommerfeld
+from rocket import Rocket
+from flightdata import FlightData
 
 
 def flight_angle(t: int | float) -> int | float:
@@ -91,6 +90,15 @@ def f9_thrust_fun(t: int | float, angle_fun: Callable) -> np.ndarray:
         return 0
 
 
+def drag_fun(*args, **kwargs) -> int | float:
+    """
+    :param args:
+    :param kwargs:
+    :return:
+    """
+    return .5
+
+
 def _diff_eq(y0: np.ndarray, t: int | float, m: int | float, drag: int | float,
              gravity: int | float, thrust: int | float) -> np.ndarray:
     """
@@ -109,28 +117,28 @@ def _diff_eq(y0: np.ndarray, t: int | float, m: int | float, drag: int | float,
     return np.array(dydt)
 
 
-def _solve(proj: Rocket, solver: Callable, dt: float,
-           time: int | float) -> ProjectileData:
+def _solve(rocket: Rocket, solver: Callable, dt: float,
+           time: int | float) -> FlightData:
     """
-    :param proj: A Rocket object
+    :param rocket: A Rocket object
     :param solver: The solver used to solve the differential equation of motion
     :param dt: Timestep size [s]
     :param time: Simulation time [s]
-    :return: A ProjectileData object containing the simulation results
+    :return: A FlightData object containing the simulation results
     """
     steps = int(time / dt)
     pos = np.zeros(shape=(steps, 2), dtype=float)
     vel = np.zeros(shape=(steps, 2), dtype=float)
-    pos[0] = proj.p0
+    pos[0] = rocket.p0
     for n in range(1, steps):
         t = dt * n
-        mass = proj.mass_fun(t)
-        thrust = proj.thrust_fun(t)
+        mass = rocket.mass_fun(t)
+        thrust = rocket.thrust_fun(t)
         grav_f = utils.grav_force(m=mass, h=float(pos[n - 1, 1]))
         temp, _, rho = atmos.get_atmos_data(h=pos[n - 1, 1])
-        re = utils.reynolds(proj.size, rho=rho, temp=temp, vel=vel[n - 1])
-        c_d = proj.get_cd(re=re)
-        drag_f = utils.drag_force(rho=rho, area=proj.proj_area, c_d=c_d, vel=vel[n - 1])
+        re = utils.reynolds(rocket.size, rho=rho, temp=temp, vel=vel[n - 1])
+        c_d = rocket.get_cd(re=re)
+        drag_f = utils.drag_force(rho=rho, area=rocket.proj_area, c_d=c_d, vel=vel[n - 1])
         n_pos, n_vel = solver(diff_eq=_diff_eq, y0=np.vstack((pos[n - 1], vel[n - 1])), t=t,
                               dt=dt, m=mass, drag=drag_f, gravity=grav_f, thrust=thrust)
         pos[n] = n_pos
@@ -139,11 +147,11 @@ def _solve(proj: Rocket, solver: Callable, dt: float,
             print(f"INFO: Simulation ended early due to height being < 0")
             break
 
-    return ProjectileData(proj=proj, coords=pos[:n], vel=vel[:n], dt=dt)
+    return FlightData(rocket=rocket, coords=pos[:n], vel=vel[:n], dt=dt)
 
 
 def simulate(*args: Rocket, solver: Callable, dt: int | float,
-             time: int | float) -> list[ProjectileData]:
+             time: int | float) -> list[FlightData]:
     """
     Calculates the trajectory of the projectile. The simulation is continued until
     the projectile hits the ground or the max_steps amount of timesteps are
@@ -153,17 +161,17 @@ def simulate(*args: Rocket, solver: Callable, dt: int | float,
     of motion
     :param dt: Timestep [s]
     :param time: The length of the simulation time [s]
-    :return: List of ProjectileData objects containing the simulation results
+    :return: List of FlightDataData objects containing the simulation results
     for all given args
     """
     data_objs = []
-    for proj in args:
-        data_obj = _solve(proj=proj, solver=solver, dt=dt, time=time)
+    for rocket in args:
+        data_obj = _solve(rocket=rocket, solver=solver, dt=dt, time=time)
         data_objs.append(data_obj)
     return data_objs
 
 
-def display_results(*args: ProjectileData) -> None:
+def display_results(*args: FlightData) -> None:
     """
     Prints out and plots some key characteristics of the trajectory
     :param args:
@@ -173,19 +181,19 @@ def display_results(*args: ProjectileData) -> None:
     fig2, ax2 = plt.subplots()
     for data_obj in args:
         tspan = np.linspace(0, data_obj.time, int(data_obj.time / data_obj.dt))
-        print(f"    Flight data for {data_obj.proj}:")
+        print(f"    Flight data for {data_obj.rocket}:")
         print(f"    Total distance (in x-direction): {data_obj.x_dist:.3f} m")
         print(f"    Highest point: {data_obj.y_max:.3f} m")
         print(f"    Flight time: {data_obj.time:.3f} s")
         print()
         plt.figure(fig1)
         plt.plot(tspan, data_obj.coords[:, 1] / 1e3,
-                 label=f"{data_obj.proj}")
+                 label=f"{data_obj.rocket}")
         plt.figure(fig2)
-        plt.plot(tspan, data_obj.vel[:, 0], label=f"X velocity, {data_obj.proj}")
-        plt.plot(tspan, data_obj.vel[:, 1], label=f"Y velocity, {data_obj.proj}")
+        plt.plot(tspan, data_obj.vel[:, 0], label=f"X velocity, {data_obj.rocket}")
+        plt.plot(tspan, data_obj.vel[:, 1], label=f"Y velocity, {data_obj.rocket}")
         plt.plot(tspan, data_obj.speed, linestyle="--",
-                 label=f"Total velocity, {data_obj.proj}")
+                 label=f"Total velocity, {data_obj.rocket}")
 
     ax1.set_title("Altitude as a function of time")
     ax1.set_xlabel("Time [s]")
@@ -208,7 +216,6 @@ def main() -> None:
     d = 3.7  # Diameter [m]
     length = 69.8  # Total length [m]
     payload = 20e3  # [kg]
-    drag_corr = HolzerSommerfeld
     dt = 1  # [s]
     time = 60 * 120 # [s]
     solver = rk4
@@ -216,11 +223,12 @@ def main() -> None:
     # Projectile creation with functions and stuff
     m_fun = functools.partial(f9_mass_fun, payload=payload)
     t_fun = functools.partial(f9_thrust_fun, angle_fun=flight_angle)
-    proj = Rocket(p0=p0, d=d, length=length, mass_fun=m_fun, thrust_fun=t_fun,
-                  drag_corr=drag_corr, name="Falcon 9")
+    d_fun = drag_fun
+    rocket = Rocket(p0=p0, d=d, length=length, mass_fun=m_fun, thrust_fun=t_fun,
+                  drag_fun=d_fun, name="Falcon 9")
    
     # Simulate
-    flight_data = simulate(proj, solver=solver, dt=dt, time=time)
+    flight_data = simulate(rocket, solver=solver, dt=dt, time=time)
     display_results(flight_data[0])
 
 
