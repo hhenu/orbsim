@@ -3,17 +3,19 @@ Rocket object or sheit
 """
 
 import numpy as np
-from typing import Callable
+
+from typing import Callable, Type
+from drag_correlations import DragCorrelation
 
 
 class Rocket:
     """
     The rocket is here assumed to essentially be a shell shaped thing that
-    has a changing mass and non-zero thrust.
+    has a changing mass and (possibly) non-zero thrust.
     """
     def __init__(self, p0: np.ndarray, d: int | float, length: int | float,
                  mass_fun: Callable, thrust_fun: Callable,
-                 drag_fun: Callable, name: str = None) -> None:
+                 drag_corr: Type[DragCorrelation], name: str = None) -> None:
         """
         :param p0: Initial position [m]
         :param d: Diameter [m]
@@ -22,7 +24,7 @@ class Rocket:
         as a function of time [kg]
         :param thrust_fun: Function that describes the thrust produced
         by the rocket as a function of time [N]
-        :param drag_fun: Function that returns current drag
+        :param drag_corr: Some DragCorrelation class
         :param name: Optional name for the projectile, will be used in the legend
         of the plots so that the projectile can be identified.
         :return:
@@ -33,7 +35,7 @@ class Rocket:
         self.length = length
         self.mass_fun = mass_fun
         self.thrust_fun = thrust_fun
-        self.drag_fun = drag_fun  # TODO: Design this function
+        self.drag_corr = drag_corr(self.surf_area, self.volume, self.proj_area)
         self.name = name
         self.size = d
 
@@ -68,7 +70,7 @@ class Rocket:
         :param re: Reynolds number [-]
         :return:
         """
-        return self.drag_fun(re)
+        return self.drag_corr.eval(re)
 
     def get_mass(self, t: int | float) -> int | float:
         """
