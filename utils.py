@@ -9,11 +9,21 @@ import numpy as np
 
 def vec_len(v: np.ndarray) -> int | float:
     """
-    Length of a vector
+    Length of a (single) vector
     :param v:
     :return:
     """
     return np.sqrt(np.dot(v, v))
+
+
+# TODO: Perhaps we don't need vec_len() and speed()
+def speed(vel: np.ndarray) -> np.ndarray:
+    """
+    :param vel:
+    :return:
+    """
+    vx, vy = vel[:, 0], vel[:, 1]
+    return np.sqrt(np.power(vx, 2) + np.power(vy, 2))
 
 
 def speed2velocity(speed: int | float, angle: int | float) -> np.ndarray:
