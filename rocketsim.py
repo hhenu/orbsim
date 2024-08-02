@@ -92,6 +92,17 @@ def f9_thrust_fun(t: int | float, angle_fun: Callable) -> np.ndarray:
         return np.array([0, 0])
 
 
+def dist_to_earth(point: np.ndarray) -> int | float:
+    """
+    Finds the shortest distance from the given point to Earth
+    :param point: 
+    :return:
+    """
+    # Earth is here assumed to be at (0, 0)
+    dist = utils.vec_len(point)
+    return dist - constants.r_e
+
+
 def _inverse_clamp(val: int | float, low: int | float, high: int | float) -> int | float:
     """
     Makes sure that the given value is outside the range [low, high]
@@ -119,7 +130,6 @@ def prandtl_glauert(c0: int | float, v: int | float, t: int | float) -> int | fl
     by the model
     :param speed: Speed of the rocket [m/s]
     :param t: Temperature [K]
-    :param kwargs:
     :return:
     """
     epsilon = 1e-4
@@ -146,7 +156,7 @@ def _diff_eq(y0: np.ndarray, t: int | float, m: int | float, drag: int | float,
     :param thrust: Thrust force [N]
     :return:
     """
-    _ = t  # Unused variable, this suppresses the warning
+    _ = t # To mark the param unused 
     _, v = y0
     dydt = [v, (drag + gravity + thrust) / m]
     return np.array(dydt)
@@ -161,21 +171,23 @@ def _solve(rocket: Rocket, solver: Callable, dt: float,
     :param time: Simulation time [s]
     :return: A FlightData object containing the simulation results
     """
-    steps = int(time / dt)
+    steps = int(time / dt) + 1
     pos = np.zeros(shape=(steps, 2), dtype=float)
     vel = np.zeros(shape=(steps, 2), dtype=float)
     cds = np.zeros(shape=(steps, ), dtype=float)
     res = np.zeros(shape=(steps, ), dtype=float)
     drag = np.zeros(shape=(steps, ), dtype=float)
+    alt = np.zeros(shape=(steps, ), dtype=float)
     pos[0] = rocket.p0
     cds[0] = rocket.get_cd(re=0)
     res[0] = 0
+    alt[0] = dist_to_earth(point=rocket.p0)
     for n in range(1, steps):
-        t = dt * n
+        t = dt * n 
         mass = rocket.mass_fun(t)
         thrust = rocket.thrust_fun(t)
-        grav_f = utils.grav_force(m=mass, h=float(pos[n - 1, 1]))
-        temp, _, rho = atmos.get_atmos_data(h=pos[n - 1, 1])
+        grav_f = utils.grav_force(pos=pos[n - 1], m=mass)
+        temp, _, rho = atmos.get_atmos_data(h=alt[n - 1])
         re = utils.reynolds(rocket.size, rho=rho, temp=temp, vel=vel[n - 1])
         c_d = rocket.get_cd(re=re)
         c_d = prandtl_glauert(c0=c_d, v=utils.vec_len(vel[n - 1]), t=temp)
@@ -187,12 +199,13 @@ def _solve(rocket: Rocket, solver: Callable, dt: float,
         cds[n] = c_d
         res[n] = re
         drag[n] = utils.vec_len(drag_f)
-        if pos[n, 1] < 0:
+        alt[n] = dist_to_earth(point=pos[n])
+        if alt[n] < 0:
             print(f"INFO: Simulation ended early due to height being < 0")
             break
 
     return FlightData(rocket=rocket, coords=pos[:n], vel=vel[:n], dt=dt, c_d=cds[:n],
-                      re=res[:n])
+                      re=res[:n], alt=alt[:n])
 
 
 def simulate(*args: Rocket, solver: Callable, dt: int | float,
@@ -216,6 +229,16 @@ def simulate(*args: Rocket, solver: Callable, dt: int | float,
     return data_objs
 
 
+def _plot_earth(points: int = 200) -> None:
+    """
+    :return:
+    """
+    angles = np.linspace(0, 2 * np.pi, points, endpoint=True)
+    radius = constants.r_e * 1e-3
+    x, y = np.cos(angles) * radius, np.sin(angles) * radius
+    plt.plot(x, y, label="Earth")
+
+
 def display_results(*args: FlightData) -> None:
     """
     Prints out and plots some key characteristics of the trajectory
@@ -225,57 +248,54 @@ def display_results(*args: FlightData) -> None:
     fig1, ax1 = plt.subplots()
     fig2, ax2 = plt.subplots() 
     fig3, ax3 = plt.subplots()
-    fig4, ax4 = plt.subplots()
     for data_obj in args:
         tspan = np.linspace(0, data_obj.time, int(data_obj.time / data_obj.dt))
-        print(f"    Flight data for {data_obj.rocket}:")
-        print(f"    Total distance (in x-direction): {data_obj.x_dist:.3f} m")
-        print(f"    Highest point: {data_obj.y_max:.3f} m")
+        print(f"Flight data for {data_obj.rocket}:")
+        print(f"    Highest point: {np.max(data_obj.alt) * 1e-3:.3f} km")
         print(f"    Flight time: {data_obj.time:.3f} s")
         print()
-        plt.figure(fig1)
-        plt.plot(tspan, data_obj.coords[:, 1] / 1e3,
-                 label=f"{data_obj.rocket}")
         
+        # Trajectory with Earth plotted too
+        plt.figure(fig1)
+        _plot_earth()
+        plt.plot(data_obj.coords[:, 0] * 1e-3, data_obj.coords[:, 1] * 1e-3,
+                 label=f"{data_obj.rocket} trajectory")
+
+        # Altitude
         plt.figure(fig2)
+        plt.plot(tspan, data_obj.alt * 1e-3, label=f"{data_obj.rocket}")
+        
+        # Velocities
+        plt.figure(fig3)
         plt.plot(tspan, data_obj.vel[:, 0], label=f"X velocity, {data_obj.rocket}")
         plt.plot(tspan, data_obj.vel[:, 1], label=f"Y velocity, {data_obj.rocket}")
         plt.plot(tspan, data_obj.speed, linestyle="--",
                  label=f"Total velocity, {data_obj.rocket}")
         
-        plt.figure(fig3)
-        plt.plot(tspan, data_obj.c_d)
-
-        plt.figure(fig4)
-        plt.plot(tspan, data_obj.re)
-
-    ax1.set_title("Altitude as a function of time")
-    ax1.set_xlabel("Time [s]")
+    ax1.set_title("Trajectory")
+    ax1.set_xlabel("x [km]")
     ax1.set_ylabel("y [km]")
     ax1.legend()
     ax1.grid()
 
-    ax2.set_title("Velocities and speed as a function of time")
+    ax2.set_title("Altitude as a function of time")
     ax2.set_xlabel("Time [s]")
-    ax2.set_ylabel("Speed [m/s]")
+    ax2.set_ylabel("Altitude [km]")
     ax2.legend()
     ax2.grid()
 
-    ax3.set_title("Drag coefficient as a function of time")
+    ax3.set_title("Velocities and speed as a function of time")
     ax3.set_xlabel("Time [s]")
-    ax3.set_ylabel("Drag coefficient [-]")
+    ax3.set_ylabel("Speed [m/s]")
+    ax3.legend()
     ax3.grid()
 
-    ax4.set_title("Reynolds number as a function of time")
-    ax4.set_xlabel("Time [s]")
-    ax4.set_ylabel("Reynolds number [-]")
-    ax4.grid()
     plt.show()
 
 
 def main() -> None:
     # Initial conditions and shit
-    p0 = np.array([0, 0])  # Initial position [m]
+    p0 = np.array([0, constants.r_e])  # Initial position [m]
     d = 3.7  # Diameter [m]
     length = 69.8  # Total length [m]
     payload = 20e3  # [kg]
@@ -286,13 +306,15 @@ def main() -> None:
     # Projectile creation with functions and stuff
     m_fun = functools.partial(f9_mass_fun, payload=payload)
     t_fun = functools.partial(f9_thrust_fun, angle_fun=flight_angle)
-    drag_corr = HaiderLevenspiel 
+    # Note: HaiderLevenspiel probably overestimates drag coefficient,
+    # HolzerSommerfeld might underestimate it
+    drag_corr = HolzerSommerfeld 
     rocket = Rocket(p0=p0, d=d, length=length, mass_fun=m_fun, thrust_fun=t_fun,
                     drag_corr=drag_corr, name="Falcon 9")
    
     # Simulate
     flight_data = simulate(rocket, solver=solver, dt=dt, time=time)
-    display_results(flight_data[0])
+    display_results(*flight_data)
 
 
 

@@ -102,6 +102,7 @@ class HaiderLevenspiel(DragCorrelation):
         :param re: Reynolds number [-]
         :return:
         """
+        # To guard for Re == 0
         re = max(re, EPSILON)
         # "t" stands for "term"
         t1 = 24 / re
@@ -162,6 +163,7 @@ class HolzerSommerfeld(DragCorrelation):
         :param re: Reynolds number [-]
         :return:
         """
+        # To guard for Re == 0
         re = max(re, EPSILON)
         # "t" stands for "term"
         t1 = 8 / re * 1 / np.sqrt(self.psi)
