@@ -53,16 +53,18 @@ def reynolds(size: int | float, rho: int | float, temp: int | float,
     return rho * vmag * size / visc
 
 
-def grav_force(m: int | float, h: int | float) -> np.ndarray:
+def grav_force(pos: np.ndarray, m: int | float) -> np.ndarray:
     """
     Calculates the acceleration due to gravital attraction
     between the Earth and the projectile
+    :param pos: Position of the projectile [m]
     :param m: Mass of the projectile [kg]
-    :param h: Height of the projectile related to Earth's surface [m]
     :return: Gravitational force as a vector [N]
     """
-    r = constants.r_e + h
-    return np.array([0, -constants.big_g * constants.m_e * m / (r * r)])
+    dist = vec_len(pos)  # Earth is taken to be at (0, 0)
+    angle = np.arctan2(pos[1], pos[0])
+    mag = -constants.big_g * constants.m_e * m / (dist * dist)
+    return np.array([np.cos(angle), np.sin(angle)]) * mag
 
 
 def drag_force(rho: int | float, area: int | float, c_d: int | float,
